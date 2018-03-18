@@ -1,0 +1,5 @@
+mysql_db: ndp
+mysql_schema: ../ndp.sql
+mysql_root_pwd: password
+mysql_user: ndp
+mysql_user_pwd: password

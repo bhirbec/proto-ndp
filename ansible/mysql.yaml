@@ -1,0 +1,44 @@
+# intial and initial MySQL
+---
+# INTALL MySQL
+- name: Set MySQL root password before installing
+  debconf: name='mysql-server' question='mysql-server/root_password' value='{{mysql_root_pwd}}' vtype='password'
+
+- name: Confirm MySQL root password before installing
+  debconf: name='mysql-server' question='mysql-server/root_password_again' value='{{mysql_root_pwd}}' vtype='password'
+
+- name: Install MySQL
+  apt: package={{ item }} state=present force=yes update_cache=yes cache_valid_time=3600
+  when: ansible_os_family == 'Debian'
+  with_items:
+    - mysql-server
+    - mysql-client
+    - python-mysqldb
+
+# CREATE MySQL Database
+- name: create MySQL user
+  mysql_user:
+    login_user: root
+    login_password: "{{mysql_root_pwd}}"
+    name: "{{mysql_user}}"
+    password: "{{mysql_user_pwd}}"
+    priv: '*.*:ALL,GRANT'
+    state: present
+
+- name: Create MySQL database
+  mysql_db:
+    login_user: "{{mysql_user}}"
+    login_password: "{{mysql_user_pwd}}"
+    name: "{{mysql_db}}"
+    state: present
+
+- name: Copy db.sql
+  copy: src="{{mysql_schema}}" dest=/tmp/schema.sql
+
+- name: Create MySQL tables
+  mysql_db:
+    login_user: "{{mysql_user}}"
+    login_password: "{{mysql_user_pwd}}"
+    state: import
+    name: "{{mysql_db}}"
+    target: "/tmp/schema.sql"

@@ -1,0 +1,21 @@
+- hosts: all
+  sudo: true
+
+  tasks:
+    - include_vars:
+        file: vars.yaml
+
+    # BUILD
+    - name: Download APT packages
+      apt: name={{item}} update_cache=true
+      with_items:
+        - git
+        - build-essential
+
+    # INSTALL MySQL
+    - import_tasks: mysql.yaml
+
+# install SqlAlchemy
+# ubuntu@ubuntu-xenial:~$ sudo apt-get -y install python-pip
+# ubuntu@ubuntu-xenial:~$ export LC_ALL=C
+# ubuntu@ubuntu-xenial:~$ sudo pip install sqlalchemy
