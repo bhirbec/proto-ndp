@@ -3,18 +3,18 @@ set global max_connections = 2000;
 drop table if exists worker;
 drop table if exists task;
 drop table if exists task_log;
-drop procedure if exists reserve_task;
-drop function if exists lock_task;
+drop procedure if exists reserve_tasks;
 
 create table worker (
     worker_id varchar(255) not null,
     task_id bigint not null,
     host varchar(255),
-    unique key (worker_id),
+    batch_id bigint not null,
     unique key (host),
     unique key (task_id)
 );
 
+-- partition on task table?
 create table task (
     task_id bigint primary key not null AUTO_INCREMENT,
     host text,
@@ -34,119 +34,70 @@ create table task_log (
 
 delimiter $$ ;
 
-create procedure reserve_task(in _worker_id varchar(255))
+create procedure reserve_tasks(
+    in _worker_id varchar(255),
+    in _done_task_ids text,
+    in _max_worker int)
 begin
-    declare _task_id bigint;
-    declare _host text;
-    declare _done int default false;
-    declare _ok int default false;
+    declare _batch_id bigint;
+    declare _n int;
 
-    declare exit handler for sqlexception begin
-        rollback;
-    end;
-
-    declare exit handler for sqlwarning begin
-        rollback;
-    end;
+    set _batch_id = uuid_short();
 
     start transaction;
+        delete from worker where find_in_set(task_id, _done_task_ids);
 
-    -- declare _cur cursor for
-    select
-        task_id, host
-    into
-        _task_id, _host
-    from
-        task
-    where
-        status = 'SUBMITTED'
-    order by
-        1 asc
-    limit
-        1
-    for update;
+        select _max_worker - count(*) into _n from worker where worker_id = _worker_id;
 
-    if _task_id then
-        update task set status = 'STARTED' where task_id = _task_id;
+        insert ignore into worker
+            (worker_id, task_id, host, batch_id)
+        select
+            _worker_id, task_id, host, _batch_id
+        from
+            task
+        where
+            status = 'SUBMITTED'
+        order by
+            1 asc
+        limit
+            _n;
+    commit;
 
-        insert into worker (worker_id, task_id, host)
-        values (_worker_id, _task_id, _host);
+    start transaction;
+        update
+            task
+        set
+            status = 'STARTED'
+        where
+            task_id in (
+                select task_id
+                from worker
+                where worker_id = _worker_id and batch_id = _batch_id
+            );
 
-        insert into task_log (task_id, worker_id)
-        values (_task_id, _worker_id);
-    end if;
+        insert into task_log
+            (worker_id, task_id, status)
+        select
+            worker_id, task_id, 'STARTED'
+        from
+            worker
+        where
+            worker_id = _worker_id
+            and batch_id = _batch_id;
 
+        select
+            task_id, host
+        from
+            task
+        where
+            task_id in (
+                select task_id
+                from worker
+                where worker_id = _worker_id and batch_id = _batch_id
+            );
     commit;
 
     do sleep(0.2);
-
-    if _task_id then
-        select _task_id as task_id, _host as host;
-    end if;
-
-    -- declare continue handler for not found set _done = true;
-    -- open _cur;
-
-    -- read_loop: loop
-    --     fetch _cur into _task_id, _host;
-    --     if _done then
-    --         leave read_loop;
-    --     end if;
-
-    --     set _ok = false;
-
-    --     begin
-    --         declare exit handler for sqlexception begin
-    --             rollback;
-    --         end;
-
-    --         declare exit handler for sqlwarning begin
-    --             rollback;
-    --         end;
-
-    --         start transaction;
-    --             insert into worker (worker_id, task_id, host)
-    --             values (_worker_id, _task_id, _host);
-    --         commit;
-
-    --         set _ok = true;
-    --     end;
-
-    --     -- set _ok = lock_task(_worker_id, _task_id, _host);
-
-    --     if _ok then
-    --         leave read_loop;
-    --     end if;
-    -- end loop;
-
-    -- close _cur;
-
-    -- if _ok then
-    --     update task set status = 'STARTED' where task_id = _task_id;
-    --     insert into task_log (task_id, worker_id) values (_task_id, _worker_id);
-    --     select _task_id as task_id, _host as host;
-    -- end if;
 end $$
-
-create function lock_task(_worker_id varchar(255), _task_id int, _host text)
-    returns boolean
-begin
-    -- TODO: default value should be false
-    declare _ok boolean default true;
-
-    -- duplicate key
-    declare continue handler for sqlstate '23000' set _ok = false;
-
-    -- deadlock
-    -- declare continue handler for sqlstate '40001' set _ok = false;
-
-    insert into worker (worker_id, task_id, host)
-    values (_worker_id, _task_id, _host);
-
-    insert into task_log (worker_id, task_id, status)
-    values (_worker_id, _task_id, 'STARTED');
-
-    return _ok;
-end$$
 
 delimiter ; $$

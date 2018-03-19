@@ -1,9 +1,14 @@
 import time
+from optparse import OptionParser
 
 from sqlalchemy import create_engine
 
 
-def main():
+parser = OptionParser()
+parser.add_option("-n", "--number-task", type=int, dest="number_tasks", default=10)
+
+
+def main(options):
   engine = create_engine('mysql://ndp:password@localhost:3306/ndp')
 
   sql = '''
@@ -15,7 +20,7 @@ def main():
         ('smf1-cs{0}-14', 'show hardware'),
         ('smf1-cs{0}-15', 'show hardware')
   '''
-  for i in range(1000):
+  for i in range(options.number_tasks):
     with engine.begin() as con:
       print 'Inserting tasks...'
       con.execute(sql.format(i))
@@ -23,4 +28,5 @@ def main():
 
 
 if __name__ == '__main__':
-  main()
+  options, args = parser.parse_args()
+  main(options)
