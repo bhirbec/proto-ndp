@@ -1,8 +1,9 @@
 import random
 import signal
 import time
-import threading
 from optparse import OptionParser
+from Queue import Queue
+from threading import Event, Thread
 
 from sqlalchemy import create_engine
 
@@ -21,7 +22,7 @@ def main(opt):
 
   for i in range(opt.worker_count):
     worker_id = '{0}-{1}'.format(opt.worker_name, i)
-    w = threading.Thread(target=work, args=(engine, worker_id, opt.timeout))
+    w = Worker(engine, worker_id, opt.timeout)
     w.start()
     workers.append(w)
 
@@ -31,37 +32,51 @@ def main(opt):
   print('Bye...')
 
 
-def work(engine, worker_id, timeout_threshold=None):
-  print('starting worker {0}'.format(worker_id))
-  last = time.time()
+class Worker(Thread):
+  def __init__(self, engine, worker_id, timeout_threshold=10):
+    self.engine = engine
+    self.worker_id = worker_id
+    self.timeout_threshold = timeout_threshold
+    Thread.__init__(self)
 
-  while not _STOP.is_set():
-    # print('reserving work (worker {0})...'.format(worker_id))
-    with engine.begin() as con:
-      start = time.time()
-      res = con.execute('call reserve_task("{0}")'.format(worker_id))
-      if res.returns_rows:
-        last = time.time()
-        task_id, host = res.first()
-        print(worker_id, task_id, host, time.time() - start)
-        time.sleep(random.randint(0, 3))
-      else:
-        task_id = None
+  def run(self):
+    print('starting worker {0}'.format(self.worker_id))
+    begin = time.time()
+    last = time.time()
 
-    if task_id:
-      with engine.begin() as con:
-        con.execute('delete from worker where task_id = {0}'.format(task_id))
+    found = 0
+    not_found = 0
 
-    if timeout_threshold:
-      inactive_duration = time.time() - last
-      if inactive_duration > timeout:
-        break
-    time.sleep(1)
+    while not _STOP.is_set():
+      # print('reserving work (worker {0})...'.format(self.worker_id))
+      with self.engine.begin() as con:
+        start = time.time()
+        res = con.execute('call reserve_task("{0}")'.format(self.worker_id))
+        if res.returns_rows:
+          found += 1
+          task_id, host = res.first()
+          print(self.worker_id, task_id, host, time.time() - start)
+          last = time.time()
+          time.sleep(random.randint(0, 3))
+        else:
+          not_found += 1
+          task_id = None
 
-  print('Worker {0} timed out'.format(worker_id))
+      if task_id:
+        with self.engine.begin() as con:
+          con.execute('delete from worker where task_id = {0}'.format(task_id))
+
+      if self.timeout_threshold:
+        inactive_duration = time.time() - last
+        if inactive_duration > self.timeout_threshold:
+          duration = time.time() - begin
+          print('Waiting... Task found: {0} / Not found: {1} ({2})'.format(found, not_found, duration))
+      time.sleep(1)
+
+    print('Worker {0} timed out'.format(self.worker_id))
 
 
-_STOP = threading.Event()
+_STOP = Event()
 def _shutdown(signum, frame):
   _STOP.set()
 
