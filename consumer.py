@@ -44,12 +44,17 @@ def reserve_tasks(engine, worker_name, taskQ, doneQ, n):
   while not _STOP.is_set():
     if (time.time() - start) > reserve_interval:
       str_ids = ','.join(str(s) for s in done_ids)
+      number_done = len(done_ids)
       done_ids = []
 
       start = time.time()
       with engine.begin() as con:
         tasks = con.execute('call reserve_tasks("{0}", "{1}", {2})'.format(worker_name, str_ids, n))
         tasks = list(tasks)
+
+        duration = time.time() - start
+        msg = 'Fetched {0} tasks over {1} requested ({1})'
+        print(msg.format(len(tasks), number_done, duration))
 
         for task in tasks:
           task_id, host = task['task_id'], task['host']
@@ -79,12 +84,13 @@ class Worker(Thread):
 
     while not _STOP.is_set():
       task_id, host = self.taskQ.get(block=True)
+      start = time.time()
       print('received task_id {0} ({1})'.format(task_id, host))
 
       # simlutated work
       time.sleep(random.randint(0, 3))
 
-      print('task {0} is done'.format(task_id))
+      print('task {0} is done {1}'.format(task_id, time.time() - start))
       self.doneQ.put(task_id, block=False)
 
 
