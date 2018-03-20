@@ -1,6 +1,8 @@
+import logging as log
 import random
 import signal
 import time
+
 from optparse import OptionParser
 from Queue import Empty, Queue
 from threading import Event, Thread
@@ -14,6 +16,7 @@ parser.add_option("-n", "--worker-count", type=int, dest="worker_count", default
 
 
 def main(opt):
+  log.basicConfig(level=log.INFO)
   signal.signal(signal.SIGINT, _shutdown)
   signal.signal(signal.SIGTERM, _shutdown)
 
@@ -33,7 +36,7 @@ def main(opt):
   for w in workers:
     w.join()
 
-  print('Bye...')
+  log.info('Bye...')
 
 
 def reserve_tasks(engine, worker_name, taskQ, doneQ, n):
@@ -54,7 +57,7 @@ def reserve_tasks(engine, worker_name, taskQ, doneQ, n):
 
         duration = time.time() - start
         msg = 'Fetched {0} tasks over {1} requested ({1})'
-        print(msg.format(len(tasks), number_done, duration))
+        log.info(msg.format(len(tasks), number_done, duration))
 
         for task in tasks:
           taskQ.put(task)
@@ -78,19 +81,19 @@ class Worker(Thread):
     Thread.__init__(self)
 
   def run(self):
-    print('starting worker {0}'.format(self.worker_id))
+    log.info('starting worker {0}'.format(self.worker_id))
 
     while not _STOP.is_set():
       task = self.taskQ.get(block=True)
       start = time.time()
 
       task_id, host = task['task_id'], task['host']
-      print('received task_id {0} ({1})'.format(task_id, host))
+      log.info('received task_id {0} ({1})'.format(task_id, host))
 
       # simlutated work
       time.sleep(random.randint(0, 3))
 
-      print('task {0} is done {1}'.format(task_id, time.time() - start))
+      log.info('task {0} is done {1}'.format(task_id, time.time() - start))
       self.doneQ.put(task_id, block=False)
 
 

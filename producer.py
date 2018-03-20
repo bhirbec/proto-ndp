@@ -1,3 +1,4 @@
+import logging as log
 import time
 from optparse import OptionParser
 
@@ -9,6 +10,7 @@ parser.add_option("-n", "--number-task", type=int, dest="number_tasks", default=
 
 
 def main(options):
+  log.basicConfig(level=log.INFO)
   engine = create_engine('mysql://ndp:password@localhost:3306/ndp')
 
   values = ',\n'.join(
@@ -20,7 +22,7 @@ def main(options):
 
   for i in range(options.number_tasks):
     with engine.begin() as con:
-      print 'Inserting tasks...'
+      log.info('Inserting tasks...')
       con.execute(sql.format(i))
       time.sleep(1)
 
