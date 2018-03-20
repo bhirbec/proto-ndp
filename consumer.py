@@ -57,9 +57,7 @@ def reserve_tasks(engine, worker_name, taskQ, doneQ, n):
         print(msg.format(len(tasks), number_done, duration))
 
         for task in tasks:
-          task_id, host = task['task_id'], task['host']
-          print(task_id, host, time.time() - start)
-          taskQ.put((task_id, host))
+          taskQ.put(task)
 
     try:
       done_id = doneQ.get(block=False)
@@ -83,8 +81,10 @@ class Worker(Thread):
     print('starting worker {0}'.format(self.worker_id))
 
     while not _STOP.is_set():
-      task_id, host = self.taskQ.get(block=True)
+      task = self.taskQ.get(block=True)
       start = time.time()
+
+      task_id, host = task['task_id'], task['host']
       print('received task_id {0} ({1})'.format(task_id, host))
 
       # simlutated work
